@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 const CSP =
   "default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:; object-src 'none'; base-uri 'none'"
 
-// Dev server needs inline scripts and websockets for HMR, so CSP is only applied to production builds.
+// prod only — vite hmr needs inline scripts + ws
 function cspPlugin(): Plugin {
   return {
     name: 'inject-csp',

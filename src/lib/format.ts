@@ -1,23 +1,22 @@
 const numberFormat = new Intl.NumberFormat('en-US')
 const decimalFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
-const COMPACT_UNITS = ['', 'K', 'M', 'B', 'T', 'Q']
+const UNITS = ['', 'K', 'M', 'B', 'T', 'Q']
 
 export function formatNumber(n: number): string {
   if (!Number.isFinite(n)) return '∞'
   return numberFormat.format(Math.round(n))
 }
 
-/** 1,234 → 1.2K, 3,303,741 → 3.3M, 2.17e15 → 2.2Q */
 export function formatCompact(n: number): string {
   if (!Number.isFinite(n)) return '∞'
   if (n < 1000) return formatNumber(n)
-  let unit = Math.min(Math.floor(Math.log10(n) / 3), COMPACT_UNITS.length - 1)
+  let unit = Math.min(Math.floor(Math.log10(n) / 3), UNITS.length - 1)
   let value = n / 1000 ** unit
-  if (value >= 999.95 && unit < COMPACT_UNITS.length - 1) {
+  if (value >= 999.95 && unit < UNITS.length - 1) {
     unit++
     value = n / 1000 ** unit
   }
-  return `${decimalFormat.format(value)}${COMPACT_UNITS[unit]}`
+  return `${decimalFormat.format(value)}${UNITS[unit]}`
 }
 
 export function formatDuration(seconds: number): string {
@@ -38,6 +37,6 @@ export function formatElapsed(ms: number): string {
   const h = Math.floor(total / 3600)
   const m = Math.floor((total % 3600) / 60)
   const s = total % 60
-  const pad = (v: number) => v.toString().padStart(2, '0')
+  const pad = (v: number) => String(v).padStart(2, '0')
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
 }

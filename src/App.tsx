@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import bs58 from 'bs58'
 import { BASE58_ALPHABET, expectedAttempts, findInvalidChars, prefixProbability } from './lib/base58'
 import { formatCompact, formatDuration, formatElapsed, formatNumber } from './lib/format'
 import type { GrindRequest, GrindResponse } from './grindWorker'
-import * as Icon from './icons'
+import { Check, Copy, Download, Eye, EyeOff, Logo, Trash } from './icons'
 import Terms from './Terms'
 
 type Status = 'idle' | 'running' | 'found'
+type Route = 'home' | 'terms'
 
 type Result = {
   prefix: string
@@ -16,16 +17,13 @@ type Result = {
   elapsedMs: number
 }
 
-// Rough single-thread Web Crypto throughput, used only until a real measurement exists.
-const ASSUMED_KEYS_PER_SEC_PER_THREAD = 10000
+const KEYS_PER_SEC = 10_000
 const MAX_THREADS = navigator.hardwareConcurrency || 4
-const UI_REFRESH_MS = 500
-const MAX_PREFIX_LENGTH = 8
-const ADDRESS_LENGTH = 44
-// Leading characters below this probability are the "rare" ones (lowercase, J-Z).
-const RARE_FIRST_CHAR_P = 0.02
+const TICK_MS = 500
+const MAX_PREFIX = 8
+const ADDR_LEN = 44
 
-function difficultyFor(seconds: number): { label: string; severe: boolean } {
+function difficultyFor(seconds: number) {
   if (seconds < 10) return { label: 'Instant', severe: false }
   if (seconds < 300) return { label: 'Easy', severe: false }
   if (seconds < 3600) return { label: 'Moderate', severe: false }
@@ -40,7 +38,7 @@ export default function App() {
   const [status, setStatus] = useState<Status>('idle')
   const [attempts, setAttempts] = useState(0)
   const [elapsedMs, setElapsedMs] = useState(0)
-  const [measuredRatePerThread, setMeasuredRatePerThread] = useState<number | null>(null)
+  const [measuredRate, setMeasuredRate] = useState<number | null>(null)
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -49,30 +47,32 @@ export default function App() {
   const startRef = useRef(0)
   const timerRef = useRef<number | undefined>(undefined)
 
-  const invalidChars = useMemo(() => findInvalidChars(prefix), [prefix])
+  const invalidChars = findInvalidChars(prefix)
   const isValid = prefix.length > 0 && invalidChars.length === 0
-  const probability = useMemo(() => (isValid ? prefixProbability(prefix) : 0), [prefix, isValid])
-  const expected = useMemo(() => (isValid ? expectedAttempts(prefix) : Infinity), [prefix, isValid])
-  const rareFirstChar = isValid && prefixProbability(prefix[0]) < RARE_FIRST_CHAR_P
+  const probability = isValid ? prefixProbability(prefix) : 0
+  const expected = isValid ? expectedAttempts(prefix) : Infinity
+  const rareStart = isValid && prefixProbability(prefix[0]) < 0.02
 
-  const ratePerThread = measuredRatePerThread ?? ASSUMED_KEYS_PER_SEC_PER_THREAD
+  const perThread = measuredRate ?? KEYS_PER_SEC
   const liveRate = status === 'running' && elapsedMs > 1000 ? attempts / (elapsedMs / 1000) : null
-  const rate = liveRate ?? ratePerThread * threads
+  const rate = liveRate ?? perThread * threads
   const expectedSeconds = expected / rate
   const difficulty = difficultyFor(expectedSeconds)
   const foundChance = status === 'running' ? 1 - Math.pow(1 - probability, attempts) : status === 'found' ? 1 : 0
   const running = status === 'running'
 
-  useEffect(() => () => stopWorkers(), [])
+  useEffect(() => {
+    return () => stopWorkers()
+  }, [])
 
   function stopWorkers() {
-    workersRef.current.forEach((w) => w.terminate())
+    for (const w of workersRef.current) w.terminate()
     workersRef.current = []
     window.clearInterval(timerRef.current)
   }
 
-  function recordRate(totalAttempts: number, ms: number, threadCount: number) {
-    if (ms > 2000) setMeasuredRatePerThread(totalAttempts / (ms / 1000) / threadCount)
+  function recordRate(total: number, ms: number, n: number) {
+    if (ms > 2000) setMeasuredRate(total / (ms / 1000) / n)
   }
 
   function start() {
@@ -87,13 +87,13 @@ export default function App() {
     setError(null)
     setStatus('running')
 
-    const threadCount = threads
-    const request: GrindRequest = { type: 'start', prefix }
+    const n = threads
+    const req: GrindRequest = { type: 'start', prefix }
 
-    for (let i = 0; i < threadCount; i++) {
+    for (let i = 0; i < n; i++) {
       const worker = new Worker(new URL('./grindWorker.ts', import.meta.url), { type: 'module' })
-      worker.onmessage = (event: MessageEvent<GrindResponse>) => {
-        const msg = event.data
+      worker.onmessage = (e: MessageEvent<GrindResponse>) => {
+        const msg = e.data
         if (workersRef.current.length === 0) return
         if (msg.type === 'error') {
           stopWorkers()
@@ -106,11 +106,11 @@ export default function App() {
 
         const ms = performance.now() - startRef.current
         stopWorkers()
-        recordRate(attemptsRef.current, ms, threadCount)
+        recordRate(attemptsRef.current, ms, n)
         setAttempts(attemptsRef.current)
         setElapsedMs(ms)
         setResult({
-          prefix: request.prefix,
+          prefix: req.prefix,
           publicKey: msg.publicKey,
           secretKey: Uint8Array.from(msg.secretKey),
           attempts: attemptsRef.current,
@@ -118,14 +118,14 @@ export default function App() {
         })
         setStatus('found')
       }
-      worker.postMessage(request)
+      worker.postMessage(req)
       workersRef.current.push(worker)
     }
 
     timerRef.current = window.setInterval(() => {
       setAttempts(attemptsRef.current)
       setElapsedMs(performance.now() - startRef.current)
-    }, UI_REFRESH_MS)
+    }, TICK_MS)
   }
 
   function stop() {
@@ -165,8 +165,8 @@ export default function App() {
           <span className="eyebrow">// Mark58 · Solana Vanity Address</span>
           <h1>Solana vanity address generator</h1>
           <p className="lead">
-            Generate a Solana wallet address that starts with the characters you choose. Keypairs are created
-            locally in your browser with Web Crypto and never leave your device.
+            Grind a Solana address that starts with your prefix. Keypairs are generated in this tab and never leave
+            your machine.
           </p>
           <div className="tags">
             <span className="tag bracket">Built for Solana</span>
@@ -185,7 +185,7 @@ export default function App() {
               <div className="row-between">
                 <label htmlFor="prefix">Address prefix</label>
                 <span className="mono-muted">
-                  {prefix.length}/{MAX_PREFIX_LENGTH}
+                  {prefix.length}/{MAX_PREFIX}
                 </span>
               </div>
 
@@ -194,9 +194,11 @@ export default function App() {
                   id="prefix"
                   value={prefix}
                   onChange={(e) => setPrefix(e.target.value.trim())}
-                  onKeyDown={(e) => e.key === 'Enter' && start()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') start()
+                  }}
                   placeholder="e.g. Ponks"
-                  maxLength={MAX_PREFIX_LENGTH}
+                  maxLength={MAX_PREFIX}
                   spellCheck={false}
                   autoComplete="off"
                   disabled={running}
@@ -212,14 +214,13 @@ export default function App() {
                     {ch}
                   </span>
                 ))}
-                <span className="rest">{'X'.repeat(ADDRESS_LENGTH - prefix.length)}</span>
+                <span className="rest">{'X'.repeat(ADDR_LEN - prefix.length)}</span>
               </div>
 
               {invalidChars.length > 0 ? (
                 <Notice tone="error">
-                  Invalid character{invalidChars.length > 1 ? 's' : ''}: <code>{invalidChars.join(' ')}</code>.
-                  Solana addresses use Base58, which excludes <code>0</code> <code>O</code> <code>I</code>{' '}
-                  <code>l</code>.
+                  Invalid character{invalidChars.length > 1 ? 's' : ''}: <code>{invalidChars.join(' ')}</code>. Base58
+                  skips <code>0</code> <code>O</code> <code>I</code> <code>l</code>.
                 </Notice>
               ) : (
                 <p className="hint">
@@ -228,7 +229,7 @@ export default function App() {
                 </p>
               )}
 
-              {rareFirstChar && (
+              {rareStart && (
                 <Notice tone="info">
                   Addresses rarely start with <code>{prefix[0]}</code>. Prefixes starting with <code>2–9</code> or{' '}
                   <code>A–H</code> are roughly 17× faster to find.
@@ -244,7 +245,7 @@ export default function App() {
                   title={isValid ? formatNumber(expected) : undefined}
                 />
                 <Cell
-                  label={measuredRatePerThread === null && !running ? 'Est. time · rough' : 'Est. time'}
+                  label={measuredRate === null && !running ? 'Est. time · rough' : 'Est. time'}
                   value={isValid ? `~${formatDuration(expectedSeconds)}` : '—'}
                 />
               </div>
@@ -270,7 +271,7 @@ export default function App() {
 
               {isValid && expectedSeconds > 3600 && !running && (
                 <Notice tone="warn">
-                  This prefix may take a long time. Keep this tab open and prevent your computer from sleeping.
+                  This could take a while. Don't close the tab or let the machine sleep.
                 </Notice>
               )}
 
@@ -310,7 +311,7 @@ export default function App() {
           </section>
         )}
 
-        {error && <Notice tone="error">Something went wrong while generating: {error}</Notice>}
+        {error && <Notice tone="error">{error}</Notice>}
 
         {result && <ResultCard result={result} onClear={clearResult} />}
 
@@ -320,22 +321,18 @@ export default function App() {
   )
 }
 
-type Route = 'home' | 'terms'
-
-function routeFromHash(): Route {
-  return window.location.hash === '#/terms' ? 'terms' : 'home'
-}
-
 function useHashRoute(): Route {
-  const [route, setRoute] = useState(routeFromHash)
+  const [route, setRoute] = useState<Route>(() =>
+    window.location.hash === '#/terms' ? 'terms' : 'home',
+  )
 
   useEffect(() => {
-    const onChange = () => {
-      setRoute(routeFromHash())
+    const onHash = () => {
+      setRoute(window.location.hash === '#/terms' ? 'terms' : 'home')
       window.scrollTo(0, 0)
     }
-    window.addEventListener('hashchange', onChange)
-    return () => window.removeEventListener('hashchange', onChange)
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
   return route
@@ -346,7 +343,7 @@ function SiteNav() {
     <nav className="nav">
       <div className="nav-inner">
         <a className="brand" href="#/">
-          <Icon.Logo />
+          <Logo />
           <span>Mark58</span>
           <span className="brand-tagline">Solana Vanity Address</span>
         </a>
@@ -400,9 +397,10 @@ function SiteFooter() {
 }
 
 function Notice({ tone, children }: { tone: 'error' | 'warn' | 'info'; children: ReactNode }) {
+  const label = tone === 'error' ? 'Error' : tone === 'warn' ? 'Note' : 'Tip'
   return (
     <div className={`notice notice-${tone}`}>
-      <span className="notice-label">{tone === 'error' ? 'Error' : tone === 'warn' ? 'Note' : 'Tip'}</span>
+      <span className="notice-label">{label}</span>
       <p>{children}</p>
     </div>
   )
@@ -418,10 +416,10 @@ function Cell({ label, value, title }: { label: string; value: string; title?: s
 }
 
 function ResultCard({ result, onClear }: { result: Result; onClear: () => void }) {
-  const prefixLength = result.prefix.length
   const [revealed, setRevealed] = useState(false)
-  const privateKey = useMemo(() => bs58.encode(result.secretKey), [result])
-  const jsonArray = useMemo(() => JSON.stringify(Array.from(result.secretKey)), [result])
+  const privateKey = bs58.encode(result.secretKey)
+  const jsonArray = JSON.stringify(Array.from(result.secretKey))
+  const n = result.prefix.length
 
   function download() {
     const blob = new Blob([jsonArray], { type: 'application/json' })
@@ -439,7 +437,7 @@ function ResultCard({ result, onClear }: { result: Result; onClear: () => void }
       <div className="panel">
         <div className="result-header">
           <span className="icon-box bracket">
-            <Icon.Check />
+            <Check />
           </span>
           <div>
             <h2>Match found</h2>
@@ -450,8 +448,8 @@ function ResultCard({ result, onClear }: { result: Result; onClear: () => void }
         </div>
 
         <KeyField label="Public address" copyValue={result.publicKey} large>
-          <span className="match">{result.publicKey.slice(0, prefixLength)}</span>
-          {result.publicKey.slice(prefixLength)}
+          <span className="match">{result.publicKey.slice(0, n)}</span>
+          {result.publicKey.slice(n)}
         </KeyField>
 
         <KeyField label="Private key · Base58 (Phantom, Solflare)" copyValue={privateKey} secret={!revealed}>
@@ -464,13 +462,13 @@ function ResultCard({ result, onClear }: { result: Result; onClear: () => void }
 
         <div className="actions">
           <button className="btn btn-primary" onClick={() => setRevealed((v) => !v)}>
-            {revealed ? <Icon.EyeOff /> : <Icon.Eye />} {revealed ? 'Hide keys' : 'Reveal keys'}
+            {revealed ? <EyeOff /> : <Eye />} {revealed ? 'Hide keys' : 'Reveal keys'}
           </button>
           <button className="btn btn-secondary" onClick={download}>
-            <Icon.Download /> Download .json
+            <Download /> Download .json
           </button>
           <button className="btn btn-secondary btn-danger" onClick={onClear}>
-            <Icon.Trash /> Clear
+            <Trash /> Clear
           </button>
         </div>
       </div>
@@ -504,7 +502,7 @@ function KeyField({
       <div className="row-between">
         <span className="cell-label">{label}</span>
         <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={copy}>
-          {copied ? <Icon.Check /> : <Icon.Copy />} {copied ? 'Copied' : 'Copy'}
+          {copied ? <Check /> : <Copy />} {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
       <div className={`key-value ${large ? 'large' : ''} ${secret ? 'blurred' : ''}`}>{children}</div>

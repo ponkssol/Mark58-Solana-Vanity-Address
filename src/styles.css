@@ -47,8 +47,6 @@ code {
   border: 1px solid var(--line);
 }
 
-/* ---------- Corner brackets ---------- */
-
 .bracket {
   --c: rgba(255, 255, 255, 0.75);
   --s: 5px;
@@ -65,8 +63,6 @@ code {
   background-repeat: no-repeat;
   background-origin: border-box;
 }
-
-/* ---------- Nav ---------- */
 
 .nav {
   position: sticky;
@@ -94,6 +90,8 @@ code {
   font-size: 1.2rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+  color: inherit;
+  text-decoration: none;
 }
 
 .brand-tagline {
@@ -120,11 +118,6 @@ code {
   color: #fff;
 }
 
-.brand {
-  color: inherit;
-  text-decoration: none;
-}
-
 .nav-links {
   display: flex;
   align-items: center;
@@ -142,8 +135,6 @@ code {
 .nav-links > a:hover {
   color: var(--text);
 }
-
-/* ---------- Tags ---------- */
 
 .tags {
   display: flex;
@@ -186,8 +177,6 @@ code {
   background: var(--text);
   animation: blink 1.4s steps(2, start) infinite;
 }
-
-/* ---------- Layout ---------- */
 
 .container {
   max-width: var(--page-width);
@@ -270,8 +259,6 @@ h2 {
   gap: 12px;
 }
 
-/* ---------- Panel ---------- */
-
 .panel {
   display: flex;
   flex-direction: column;
@@ -313,8 +300,6 @@ label {
   font-size: 0.93rem;
   font-weight: 600;
 }
-
-/* ---------- Prefix input ---------- */
 
 .prefix-input {
   display: flex;
@@ -383,8 +368,6 @@ label {
   color: var(--faint);
 }
 
-/* ---------- Notices ---------- */
-
 .notice {
   display: flex;
   align-items: flex-start;
@@ -423,8 +406,6 @@ label {
 .notice-warn {
   border-left-color: var(--muted);
 }
-
-/* ---------- Grid cells ---------- */
 
 .grid {
   display: grid;
@@ -467,8 +448,6 @@ label {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Thread slider ---------- */
-
 .threads {
   display: flex;
   flex-direction: column;
@@ -506,8 +485,6 @@ input[type='range']::-moz-range-thumb {
   border: none;
   border-radius: 0;
 }
-
-/* ---------- Buttons ---------- */
 
 .btn {
   display: inline-flex;
@@ -567,8 +544,6 @@ input[type='range']::-moz-range-thumb {
   gap: 10px;
 }
 
-/* ---------- Progress ---------- */
-
 .progress {
   height: 2px;
   background: var(--line);
@@ -579,8 +554,6 @@ input[type='range']::-moz-range-thumb {
   background: var(--text);
   transition: width 0.5s ease;
 }
-
-/* ---------- Result ---------- */
 
 .result-header {
   display: flex;
@@ -646,8 +619,6 @@ input[type='range']::-moz-range-thumb {
   filter: blur(6px);
   user-select: none;
 }
-
-/* ---------- Footer ---------- */
 
 .footer {
   display: flex;
@@ -728,8 +699,6 @@ input[type='range']::-moz-range-thumb {
   text-decoration: underline;
 }
 
-/* ---------- Legal page ---------- */
-
 .legal {
   display: flex;
   flex-direction: column;
@@ -766,8 +735,6 @@ input[type='range']::-moz-range-thumb {
   text-decoration: none;
 }
 
-/* ---------- Motion ---------- */
-
 @keyframes blink {
   to {
     visibility: hidden;
@@ -782,8 +749,6 @@ input[type='range']::-moz-range-thumb {
     transition: none !important;
   }
 }
-
-/* ---------- Responsive ---------- */
 
 @media (max-width: 860px) {
   .generator {

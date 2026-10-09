@@ -9,21 +9,24 @@ export type GrindResponse =
   | { type: 'found'; attempts: number; publicKey: string; secretKey: number[] }
   | { type: 'error'; message: string }
 
-const PROGRESS_INTERVAL_MS = 250
-const BATCH_SIZE = 64
+const PROGRESS_MS = 250
+const BATCH = 64
 const ED25519 = { name: 'Ed25519' } as const
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope
 
-ctx.onmessage = (event: MessageEvent<GrindRequest>) => {
+ctx.onmessage = async (event: MessageEvent<GrindRequest>) => {
   if (event.data.type !== 'start') return
-  const prefix = event.data.prefix
-  supportsWebCrypto()
-    .then((ok) => (ok ? grindWebCrypto(prefix) : grindTweetnacl(prefix)))
-    .catch((err) => post({ type: 'error', message: String(err) }))
+  try {
+    const { prefix } = event.data
+    if (await canUseWebCrypto()) await grindWebCrypto(prefix)
+    else grindTweetnacl(prefix)
+  } catch (err) {
+    post({ type: 'error', message: String(err) })
+  }
 }
 
-async function supportsWebCrypto(): Promise<boolean> {
+async function canUseWebCrypto() {
   try {
     await crypto.subtle.generateKey(ED25519, true, ['sign', 'verify'])
     return true
@@ -32,23 +35,22 @@ async function supportsWebCrypto(): Promise<boolean> {
   }
 }
 
-// The main thread stops grinding by terminating the worker, so these loops never exit on their own.
 async function grindWebCrypto(prefix: string) {
-  const progress = progressReporter()
+  const progress = makeProgress()
 
-  for (;;) {
+  while (true) {
     const pairs = await Promise.all(
-      Array.from({ length: BATCH_SIZE }, () => crypto.subtle.generateKey(ED25519, true, ['sign', 'verify'])),
+      Array.from({ length: BATCH }, () => crypto.subtle.generateKey(ED25519, true, ['sign', 'verify'])),
     )
-    const publicKeys = await Promise.all(pairs.map((p) => crypto.subtle.exportKey('raw', p.publicKey)))
+    const pubs = await Promise.all(pairs.map((p) => crypto.subtle.exportKey('raw', p.publicKey)))
 
-    for (let i = 0; i < BATCH_SIZE; i++) {
-      const publicKey = new Uint8Array(publicKeys[i])
+    for (let i = 0; i < BATCH; i++) {
+      const publicKey = new Uint8Array(pubs[i])
       const address = bs58.encode(publicKey)
       progress.count()
       if (!address.startsWith(prefix)) continue
 
-      // PKCS#8 for Ed25519 ends with the 32-byte seed; Solana's secret key is seed || publicKey.
+      // pkcs8 for ed25519 ends with the 32-byte seed; solana secret = seed || pubkey
       const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pairs[i].privateKey))
       const seed = pkcs8.slice(-32)
       const derived = nacl.sign.keyPair.fromSeed(seed)
@@ -61,15 +63,15 @@ async function grindWebCrypto(prefix: string) {
       return
     }
 
-    progress.maybeReport()
+    progress.flush()
   }
 }
 
 function grindTweetnacl(prefix: string) {
-  const progress = progressReporter()
+  const progress = makeProgress()
 
-  for (;;) {
-    for (let i = 0; i < BATCH_SIZE; i++) {
+  while (true) {
+    for (let i = 0; i < BATCH; i++) {
       const { publicKey, secretKey } = nacl.sign.keyPair()
       const address = bs58.encode(publicKey)
       progress.count()
@@ -79,24 +81,24 @@ function grindTweetnacl(prefix: string) {
       }
       secretKey.fill(0)
     }
-    progress.maybeReport()
+    progress.flush()
   }
 }
 
-function progressReporter() {
+function makeProgress() {
   let pending = 0
-  let lastReport = performance.now()
+  let last = performance.now()
 
   return {
     count() {
       pending++
     },
-    maybeReport() {
+    flush() {
       const now = performance.now()
-      if (now - lastReport < PROGRESS_INTERVAL_MS) return
+      if (now - last < PROGRESS_MS) return
       post({ type: 'progress', attempts: pending })
       pending = 0
-      lastReport = now
+      last = now
     },
     found(address: string, secretKey: Uint8Array) {
       post({ type: 'found', attempts: pending, publicKey: address, secretKey: Array.from(secretKey) })

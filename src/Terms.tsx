@@ -11,7 +11,7 @@ export default function Terms() {
         <p className="mono-muted">Last updated: {LAST_UPDATED}</p>
       </header>
 
-      <LegalSection index="01" title="What Mark58 is">
+      <LegalSection index="01" title="Overview">
         <p>
           Mark58 is a free tool that generates Solana keypairs whose public address starts with characters you
           choose (a "vanity address"). All computation runs locally in your browser. Mark58 has no backend server,
