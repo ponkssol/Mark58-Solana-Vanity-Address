@@ -1,0 +1,7 @@
+node_modules
+dist
+*.local
+
+# generated keypairs - never commit
+*-keypair.json
+keypairs/
