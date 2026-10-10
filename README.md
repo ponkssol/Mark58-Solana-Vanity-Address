@@ -4,12 +4,12 @@ In-browser Solana vanity address generator.
 
 Live: [mark58.xyz](https://mark58.xyz)
 
-Pick a prefix, grind Ed25519 keypairs until the address matches. Everything stays in the tab — no backend, no accounts, no analytics. Production builds set `connect-src 'none'` so the page cannot talk to a server even if it wanted to.
+Fill a prefix, a suffix, or both, then grind Ed25519 keypairs until the address matches. Everything stays in the tab — no backend, no accounts, no analytics. Production builds set `connect-src 'none'` so the page cannot talk to a server even if it wanted to.
 
 ## Use it
 
 1. Open [mark58.xyz](https://mark58.xyz)
-2. Type a prefix (Base58, case-sensitive, max 8 chars)
+2. Type a **Starts with** prefix, an **Ends with** suffix, or both (Base58, case-sensitive, max 8 chars each)
 3. Hit generate and leave the tab open
 4. When it hits, copy the address / private key, or download the JSON keypair for Solana CLI
 
@@ -21,13 +21,13 @@ Keys are created locally with Web Crypto (Ed25519), falling back to tweetnacl if
 
 Nobody can recover a key generated here. If you lose it, the wallet is gone. Store it offline before sending funds.
 
-## Prefixes
+## Patterns
 
 Solana addresses are Base58, so `0`, `O`, `I`, and `l` are invalid.
 
-First character matters a lot. Prefixes starting with `2–9` or `A–H` are much faster. Lowercase and `J–Z` at the start are rare and will take longer.
+For **starts with**, the first character matters a lot. Prefixes starting with `2–9` or `A–H` are much faster. Lowercase and `J–Z` at the start are rare.
 
-A 1–2 character prefix is usually instant. 4+ can take hours. 6+ can take days. Keep the machine awake.
+For **ends with**, characters are roughly even. Using both sides multiplies the difficulty. A 1–2 character pattern is usually instant. 4+ can take hours. 6+ can take days. Keep the machine awake.
 
 ## Run locally
 

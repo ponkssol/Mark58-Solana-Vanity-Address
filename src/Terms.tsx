@@ -13,8 +13,8 @@ export default function Terms() {
 
       <LegalSection index="01" title="Overview">
         <p>
-          Mark58 is a free tool that generates Solana keypairs whose public address starts with characters you
-          choose (a "vanity address"). All computation runs locally in your browser. Mark58 has no backend server,
+          Mark58 is a free tool that generates Solana keypairs whose public address starts with, ends with, or both
+          (a "vanity address"). All computation runs locally in your browser. Mark58 has no backend server,
           no accounts, and no database.
         </p>
       </LegalSection>

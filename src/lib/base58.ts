@@ -48,7 +48,20 @@ function bigRatio(num: bigint, den: bigint): number {
   return Number(num >> shift) / Number(den >> shift)
 }
 
-export function expectedAttempts(prefix: string): number {
-  const p = prefixProbability(prefix)
+// last digits of a random 256-bit int in base58 are close to uniform
+export function suffixProbability(suffix: string): number {
+  if (!suffix) return 1
+  if (findInvalidChars(suffix).length) return 0
+  return Math.pow(1 / 58, suffix.length)
+}
+
+export function comboProbability(prefix: string, suffix: string): number {
+  if (!prefix && !suffix) return 0
+  if (findInvalidChars(prefix + suffix).length) return 0
+  return prefixProbability(prefix) * suffixProbability(suffix)
+}
+
+export function expectedAttempts(prefix: string, suffix = ''): number {
+  const p = comboProbability(prefix, suffix)
   return p > 0 ? 1 / p : Infinity
 }

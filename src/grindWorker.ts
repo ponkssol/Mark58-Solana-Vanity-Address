@@ -2,7 +2,7 @@
 import nacl from 'tweetnacl'
 import bs58 from 'bs58'
 
-export type GrindRequest = { type: 'start'; prefix: string }
+export type GrindRequest = { type: 'start'; prefix: string; suffix: string }
 
 export type GrindResponse =
   | { type: 'progress'; attempts: number }
@@ -18,9 +18,9 @@ const ctx = self as unknown as DedicatedWorkerGlobalScope
 ctx.onmessage = async (event: MessageEvent<GrindRequest>) => {
   if (event.data.type !== 'start') return
   try {
-    const { prefix } = event.data
-    if (await canUseWebCrypto()) await grindWebCrypto(prefix)
-    else grindTweetnacl(prefix)
+    const { prefix, suffix } = event.data
+    if (await canUseWebCrypto()) await grindWebCrypto(prefix, suffix)
+    else grindTweetnacl(prefix, suffix)
   } catch (err) {
     post({ type: 'error', message: String(err) })
   }
@@ -35,7 +35,13 @@ async function canUseWebCrypto() {
   }
 }
 
-async function grindWebCrypto(prefix: string) {
+function hits(address: string, prefix: string, suffix: string) {
+  if (prefix && !address.startsWith(prefix)) return false
+  if (suffix && !address.endsWith(suffix)) return false
+  return true
+}
+
+async function grindWebCrypto(prefix: string, suffix: string) {
   const progress = makeProgress()
 
   while (true) {
@@ -48,7 +54,7 @@ async function grindWebCrypto(prefix: string) {
       const publicKey = new Uint8Array(pubs[i])
       const address = bs58.encode(publicKey)
       progress.count()
-      if (!address.startsWith(prefix)) continue
+      if (!hits(address, prefix, suffix)) continue
 
       // pkcs8 for ed25519 ends with the 32-byte seed; solana secret = seed || pubkey
       const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pairs[i].privateKey))
@@ -67,7 +73,7 @@ async function grindWebCrypto(prefix: string) {
   }
 }
 
-function grindTweetnacl(prefix: string) {
+function grindTweetnacl(prefix: string, suffix: string) {
   const progress = makeProgress()
 
   while (true) {
@@ -75,7 +81,7 @@ function grindTweetnacl(prefix: string) {
       const { publicKey, secretKey } = nacl.sign.keyPair()
       const address = bs58.encode(publicKey)
       progress.count()
-      if (address.startsWith(prefix)) {
+      if (hits(address, prefix, suffix)) {
         progress.found(address, secretKey)
         return
       }

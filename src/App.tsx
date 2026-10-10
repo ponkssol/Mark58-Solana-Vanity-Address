@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import bs58 from 'bs58'
-import { BASE58_ALPHABET, expectedAttempts, findInvalidChars, prefixProbability } from './lib/base58'
+import { BASE58_ALPHABET, comboProbability, expectedAttempts, findInvalidChars, prefixProbability } from './lib/base58'
 import { formatCompact, formatDuration, formatElapsed, formatNumber } from './lib/format'
 import type { GrindRequest, GrindResponse } from './grindWorker'
 import { Check, Copy, Download, Eye, EyeOff, Logo, Trash } from './icons'
@@ -8,9 +8,11 @@ import Terms from './Terms'
 
 type Status = 'idle' | 'running' | 'found'
 type Route = 'home' | 'terms'
+type MatchMode = 'start' | 'end' | 'both'
 
 type Result = {
   prefix: string
+  suffix: string
   publicKey: string
   secretKey: Uint8Array
   attempts: number
@@ -33,7 +35,9 @@ function difficultyFor(seconds: number) {
 
 export default function App() {
   const route = useHashRoute()
+  const [mode, setMode] = useState<MatchMode>('start')
   const [prefix, setPrefix] = useState('')
+  const [suffix, setSuffix] = useState('')
   const [threads, setThreads] = useState(Math.max(1, MAX_THREADS - 1))
   const [status, setStatus] = useState<Status>('idle')
   const [attempts, setAttempts] = useState(0)
@@ -47,11 +51,17 @@ export default function App() {
   const startRef = useRef(0)
   const timerRef = useRef<number | undefined>(undefined)
 
-  const invalidChars = findInvalidChars(prefix)
-  const isValid = prefix.length > 0 && invalidChars.length === 0
-  const probability = isValid ? prefixProbability(prefix) : 0
-  const expected = isValid ? expectedAttempts(prefix) : Infinity
-  const rareStart = isValid && prefixProbability(prefix[0]) < 0.02
+  const activePrefix = mode === 'end' ? '' : prefix
+  const activeSuffix = mode === 'start' ? '' : suffix
+  const badPrefix = findInvalidChars(activePrefix)
+  const badSuffix = findInvalidChars(activeSuffix)
+  const invalidChars = [...new Set([...badPrefix, ...badSuffix])]
+  const hasPattern =
+    mode === 'both' ? activePrefix.length > 0 && activeSuffix.length > 0 : activePrefix.length > 0 || activeSuffix.length > 0
+  const isValid = hasPattern && invalidChars.length === 0
+  const probability = isValid ? comboProbability(activePrefix, activeSuffix) : 0
+  const expected = isValid ? expectedAttempts(activePrefix, activeSuffix) : Infinity
+  const rareStart = activePrefix.length > 0 && badPrefix.length === 0 && prefixProbability(activePrefix[0]) < 0.02
 
   const perThread = measuredRate ?? KEYS_PER_SEC
   const liveRate = status === 'running' && elapsedMs > 1000 ? attempts / (elapsedMs / 1000) : null
@@ -88,7 +98,7 @@ export default function App() {
     setStatus('running')
 
     const n = threads
-    const req: GrindRequest = { type: 'start', prefix }
+    const req: GrindRequest = { type: 'start', prefix: activePrefix, suffix: activeSuffix }
 
     for (let i = 0; i < n; i++) {
       const worker = new Worker(new URL('./grindWorker.ts', import.meta.url), { type: 'module' })
@@ -111,6 +121,7 @@ export default function App() {
         setElapsedMs(ms)
         setResult({
           prefix: req.prefix,
+          suffix: req.suffix,
           publicKey: msg.publicKey,
           secretKey: Uint8Array.from(msg.secretKey),
           attempts: attemptsRef.current,
@@ -165,8 +176,8 @@ export default function App() {
           <span className="eyebrow">// Mark58 · Solana Vanity Address</span>
           <h1>Solana vanity address generator</h1>
           <p className="lead">
-            Grind a Solana address that starts with your prefix. Keypairs are generated in this tab and never leave
-            your machine.
+            Grind a Solana address that starts with, ends with, or both. Keypairs are generated in this tab and never
+            leave your machine.
           </p>
           <div className="tags">
             <span className="tag bracket">Built for Solana</span>
@@ -182,39 +193,68 @@ export default function App() {
 
           <div className="panel generator">
             <div className="gen-main">
-              <div className="row-between">
-                <label htmlFor="prefix">Address prefix</label>
-                <span className="mono-muted">
-                  {prefix.length}/{MAX_PREFIX}
-                </span>
-              </div>
-
-              <div className={`prefix-input ${invalidChars.length ? 'invalid' : ''}`}>
-                <input
-                  id="prefix"
-                  value={prefix}
-                  onChange={(e) => setPrefix(e.target.value.trim())}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') start()
-                  }}
-                  placeholder="e.g. Ponks"
-                  maxLength={MAX_PREFIX}
-                  spellCheck={false}
-                  autoComplete="off"
-                  disabled={running}
-                />
-                {isValid && (
-                  <span className={`tag bracket ${difficulty.severe ? 'tag-severe' : ''}`}>{difficulty.label}</span>
+              <div className="match-bar">
+                <div className="match-at" role="group" aria-label="Match position">
+                  <button type="button" className={mode === 'start' ? 'active' : ''} onClick={() => setMode('start')} disabled={running}>
+                    Starts with
+                  </button>
+                  <button type="button" className={mode === 'end' ? 'active' : ''} onClick={() => setMode('end')} disabled={running}>
+                    Ends with
+                  </button>
+                  <button type="button" className={mode === 'both' ? 'active' : ''} onClick={() => setMode('both')} disabled={running}>
+                    Both
+                  </button>
+                </div>
+                {mode !== 'both' && (
+                  <span className="mono-muted">
+                    {(mode === 'end' ? suffix : prefix).length}/{MAX_PREFIX}
+                  </span>
                 )}
               </div>
 
+              <div className={`pattern-grid ${mode === 'both' ? 'both' : ''}`}>
+                {mode !== 'end' && (
+                  <PatternField
+                    id="prefix"
+                    label="Starts with"
+                    value={prefix}
+                    onChange={setPrefix}
+                    onEnter={start}
+                    placeholder="e.g. Ponks"
+                    invalid={badPrefix.length > 0}
+                    disabled={running}
+                    tag={isValid ? difficulty : null}
+                    showTag={mode !== 'both'}
+                    showLabel={mode === 'both'}
+                  />
+                )}
+                {mode !== 'start' && (
+                  <PatternField
+                    id="suffix"
+                    label="Ends with"
+                    value={suffix}
+                    onChange={setSuffix}
+                    onEnter={start}
+                    placeholder="e.g. pump"
+                    invalid={badSuffix.length > 0}
+                    disabled={running}
+                    tag={isValid ? difficulty : null}
+                    showTag={mode === 'end'}
+                    showLabel={mode === 'both'}
+                  />
+                )}
+              </div>
+
+              {mode === 'both' && isValid && (
+                <span className={`tag bracket ${difficulty.severe ? 'tag-severe' : ''}`}>{difficulty.label}</span>
+              )}
+
               <div className="preview" aria-label="Address preview">
-                {Array.from(prefix).map((ch, i) => (
-                  <span key={i} className={BASE58_ALPHABET.includes(ch) ? 'match' : 'bad'}>
-                    {ch}
-                  </span>
-                ))}
-                <span className="rest">{'X'.repeat(ADDR_LEN - prefix.length)}</span>
+                <PatternChars value={activePrefix} />
+                <span className="rest">
+                  {'X'.repeat(Math.max(ADDR_LEN - activePrefix.length - activeSuffix.length, 0))}
+                </span>
+                <PatternChars value={activeSuffix} />
               </div>
 
               {invalidChars.length > 0 ? (
@@ -231,7 +271,7 @@ export default function App() {
 
               {rareStart && (
                 <Notice tone="info">
-                  Addresses rarely start with <code>{prefix[0]}</code>. Prefixes starting with <code>2–9</code> or{' '}
+                  Addresses rarely start with <code>{activePrefix[0]}</code>. Prefixes starting with <code>2–9</code> or{' '}
                   <code>A–H</code> are roughly 17× faster to find.
                 </Notice>
               )}
@@ -415,11 +455,83 @@ function Cell({ label, value, title }: { label: string; value: string; title?: s
   )
 }
 
+function PatternField({
+  id,
+  label,
+  value,
+  onChange,
+  onEnter,
+  placeholder,
+  invalid,
+  disabled,
+  tag,
+  showTag,
+  showLabel,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (v: string) => void
+  onEnter: () => void
+  placeholder: string
+  invalid: boolean
+  disabled: boolean
+  tag: { label: string; severe: boolean } | null
+  showTag: boolean
+  showLabel: boolean
+}) {
+  return (
+    <div>
+      {showLabel && (
+        <div className="row-between">
+          <label htmlFor={id}>{label}</label>
+          <span className="mono-muted">
+            {value.length}/{MAX_PREFIX}
+          </span>
+        </div>
+      )}
+      <div className={`prefix-input ${invalid ? 'invalid' : ''}`}>
+        <input
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value.trim())}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onEnter()
+          }}
+          placeholder={placeholder}
+          maxLength={MAX_PREFIX}
+          spellCheck={false}
+          autoComplete="off"
+          disabled={disabled}
+          aria-label={label}
+        />
+        {showTag && tag && (
+          <span className={`tag bracket ${tag.severe ? 'tag-severe' : ''}`}>{tag.label}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PatternChars({ value }: { value: string }) {
+  return (
+    <>
+      {Array.from(value).map((ch, i) => (
+        <span key={`${ch}${i}`} className={BASE58_ALPHABET.includes(ch) ? 'match' : 'bad'}>
+          {ch}
+        </span>
+      ))}
+    </>
+  )
+}
+
 function ResultCard({ result, onClear }: { result: Result; onClear: () => void }) {
   const [revealed, setRevealed] = useState(false)
   const privateKey = bs58.encode(result.secretKey)
   const jsonArray = JSON.stringify(Array.from(result.secretKey))
-  const n = result.prefix.length
+  const addr = result.publicKey
+  const start = result.prefix.length
+  const end = result.suffix.length ? addr.length - result.suffix.length : addr.length
 
   function download() {
     const blob = new Blob([jsonArray], { type: 'application/json' })
@@ -448,8 +560,9 @@ function ResultCard({ result, onClear }: { result: Result; onClear: () => void }
         </div>
 
         <KeyField label="Public address" copyValue={result.publicKey} large>
-          <span className="match">{result.publicKey.slice(0, n)}</span>
-          {result.publicKey.slice(n)}
+          {result.prefix ? <span className="match">{addr.slice(0, start)}</span> : null}
+          {addr.slice(start, end)}
+          {result.suffix ? <span className="match">{addr.slice(end)}</span> : null}
         </KeyField>
 
         <KeyField label="Private key · Base58 (Phantom, Solflare)" copyValue={privateKey} secret={!revealed}>
